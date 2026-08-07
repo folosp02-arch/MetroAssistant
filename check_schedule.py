@@ -24,6 +24,7 @@
 import os
 import sys
 import re
+import time
 import requests
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
@@ -53,12 +54,38 @@ def get_target_date() -> str:
     return tomorrow.strftime("%Y-%m-%d")
 
 
-def fetch_schedule_rows():
-    resp = requests.get(SCHEDULE_URL, timeout=20, headers={
-        "User-Agent": "Mozilla/5.0 (compatible; TaoyuanScheduleBot/1.0)"
-    })
-    resp.raise_for_status()
-    resp.encoding = "utf-8"
+def fetch_schedule_rows(max_retries: int = 4):
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "zh-TW,zh;q=0.9",
+    }
+
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            resp = requests.get(
+                SCHEDULE_URL,
+                timeout=(15, 45),  # (連線逾時, 讀取逾時) 秒 - 讀取拉長因應跨國連線慢
+                headers=headers,
+            )
+            resp.raise_for_status()
+            resp.encoding = "utf-8"
+            break
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+            last_error = e
+            wait = attempt * 5
+            print(f"第 {attempt} 次抓取失敗({e.__class__.__name__}),"
+                  f"{wait} 秒後重試...")
+            if attempt < max_retries:
+                time.sleep(wait)
+    else:
+        raise RuntimeError(
+            f"抓取行程頁面連續失敗 {max_retries} 次,放棄。最後錯誤: {last_error}"
+        )
+
     soup = BeautifulSoup(resp.text, "html.parser")
 
     table = soup.find("table")
