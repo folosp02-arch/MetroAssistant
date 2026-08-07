@@ -27,6 +27,31 @@
 
 6. 之後就會照排程(台灣時間每天 07:30 與 20:00)自動執行,不用再管它。
 
+## 為什麼需要代理伺服器?
+
+實測發現桃園市政府網站對 GitHub Actions 的連線會持續 Read Timeout(逾時、
+重試都沒用),這是台灣政府網站常見的防火牆設定:直接封鎖已知的雲端機房
+IP 段(GitHub Actions 底層是 Azure),不分請求來源國家。要解決這個問題,
+必須讓程式改用**非雲端機房、且最好是台灣節點**的出口 IP 連線,也就是
+透過代理伺服器(proxy)轉發請求。
+
+### 設定步驟
+
+1. 申請一個**付費代理服務**,選擇**台灣(TW)節點**,常見服務例如
+   Webshare.io、IPRoyal、Smartproxy 等(免費公開代理不建議,通常不穩定
+   或也在封鎖名單內)。申請後你會拿到一組連線字串,格式類似:
+   ```
+   http://使用者名稱:密碼@proxy主機:port
+   ```
+2. 到 GitHub Repo 的 **Settings → Secrets and variables → Actions**,
+   新增一個 secret:
+   - Name: `PROXY_URL`
+   - Value: 上面那組完整的代理連線字串
+3. 不用改程式碼,`check_schedule.py` 已經支援:只要偵測到
+   `PROXY_URL` 這個環境變數存在,就會自動透過代理連線;沒設定的話行為
+   跟原本一樣(直接連線)。
+4. 重新手動觸發一次 workflow 測試。
+
 ## 想調整的地方
 
 - **關鍵字**:改 `.github/workflows/check_schedule.yml` 裡的 `KEYWORDS`

@@ -63,6 +63,11 @@ def fetch_schedule_rows(max_retries: int = 4):
         "Accept-Language": "zh-TW,zh;q=0.9",
     }
 
+    proxy_url = os.environ.get("PROXY_URL")  # 例如 http://user:pass@host:port
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else None
+    if proxy_url:
+        print("已設定代理伺服器,將透過代理連線。")
+
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
@@ -70,6 +75,7 @@ def fetch_schedule_rows(max_retries: int = 4):
                 SCHEDULE_URL,
                 timeout=(15, 45),  # (連線逾時, 讀取逾時) 秒 - 讀取拉長因應跨國連線慢
                 headers=headers,
+                proxies=proxies,
             )
             resp.raise_for_status()
             resp.encoding = "utf-8"
