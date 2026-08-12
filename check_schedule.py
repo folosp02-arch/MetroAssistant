@@ -144,7 +144,7 @@ def main():
         print("錯誤: 缺少環境變數 LINE_CHANNEL_ACCESS_TOKEN", file=sys.stderr)
         sys.exit(1)
 
-    keywords = [k.strip() for k in os.environ.get("KEYWORDS", "捷運").split(",") if k.strip()]
+    keywords = [k.strip() for k in os.environ.get("KEYWORDS", "捷運,機捷,綠線,桃捷,桃園捷運,桃捷公司").split(",") if k.strip()]
     target_date = get_target_date()
 
     print(f"檢查目標日期: {target_date}")
