@@ -14,8 +14,11 @@
   2. 該頁日期欄位是民國年格式,例如 115-08-06,程式會轉換成西元年比對
   3. 找出「行程日期」等於明天的所有列
   4. 只保留「出席首長」欄位剛好是「市長」的列(不含副市長、秘書長等)
-  5. 若「行程內容」或「地點」欄位包含關鍵字(預設「捷運」),就組成訊息
-  5. 用 LINE Messaging API 的 broadcast 端點推播給所有加官方帳號好友的人
+  5. 若「行程內容」或「地點」欄位包含關鍵字(預設「捷運」),就依序組成
+     兩則訊息:① 行程摘要、② 督察組通報格式(第一項自動帶入行程資料,
+     二、三項的勤教/警力數字留空供人工填寫)
+  6. 用 LINE Messaging API 的 broadcast 端點,把上述兩則訊息依序一次
+     推播給所有加官方帳號好友的人
      (broadcast 不需要事先知道對方的 User ID,只要有加官方帳號好友就會收到,
       很適合個人 / 小規模使用;若之後想改成只推給特定人,可以改用 push API
       並帶入你自己的 User ID)
@@ -136,7 +139,19 @@ def format_time_hm(time_str: str) -> str:
     return f"{hour}時{int(minute)}分"
 
 
-def build_message(matched_rows, target_date, keywords):
+def build_summary_message(matched_rows, target_date, keywords):
+    lines = [f"📢 桃園市長隔日行程提醒 ({target_date})",
+             f"偵測到與「{ '、'.join(keywords) }」相關的行程:", ""]
+    for r in matched_rows:
+        time_part = r["raw_date"].split(" ")[1] if " " in r["raw_date"] else ""
+        lines.append(f"🕒 {time_part}｜{r['speaker']}")
+        lines.append(f"　{r['content']}")
+        lines.append(f"　📍 {r['location']}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def build_report_message(matched_rows, target_date, keywords):
     date_disp = roc_date_with_weekday(target_date)
 
     blocks = []
@@ -160,12 +175,14 @@ def build_message(matched_rows, target_date, keywords):
     return "\n\n".join(blocks)
 
 
-def send_line_broadcast(message: str, token: str):
+def send_line_broadcast(messages: list, token: str):
+    if len(messages) > 5:
+        raise ValueError("LINE 單次 broadcast 最多只能放 5 則訊息")
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
-    payload = {"messages": [{"type": "text", "text": message}]}
+    payload = {"messages": [{"type": "text", "text": m} for m in messages]}
     resp = requests.post(LINE_BROADCAST_URL, headers=headers, json=payload, timeout=20)
     if resp.status_code != 200:
         raise RuntimeError(f"LINE 推播失敗: {resp.status_code} {resp.text}")
@@ -205,10 +222,14 @@ def main():
         print("沒有符合關鍵字的行程,不發送通知。")
         return
 
-    message = build_message(matched, target_date, keywords)
-    print("即將發送的訊息:\n" + message)
-    send_line_broadcast(message, token)
-    print("已發送 LINE 通知。")
+    summary_message = build_summary_message(matched, target_date, keywords)
+    report_message = build_report_message(matched, target_date, keywords)
+
+    print("即將發送的訊息 1(行程摘要):\n" + summary_message)
+    print("即將發送的訊息 2(督察組通報):\n" + report_message)
+
+    send_line_broadcast([summary_message, report_message], token)
+    print("已發送 LINE 通知(共 2 則)。")
 
 
 if __name__ == "__main__":
