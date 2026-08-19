@@ -8,17 +8,23 @@
   KEYWORDS                    要比對的關鍵字,用逗號分隔,預設 "捷運"
   TARGET_YMD                  (選用,測試用)強制指定要檢查的日期,格式 YYYY-MM-DD
                                不填的話預設檢查「明天」
+  GITHUB_REPOSITORY           GitHub Actions 會自動提供,格式 owner/repo,
+                               用來組出截圖的公開網址
+  GITHUB_REF_NAME              GitHub Actions 會自動提供,目前分支名稱
 
 運作邏輯:
   1. 抓取桃園市政府「市長行程」列表頁(該頁為一般 HTML table,不需 JS 渲染)
   2. 該頁日期欄位是民國年格式,例如 115-08-06,程式會轉換成西元年比對
   3. 找出「行程日期」等於明天的所有列
   4. 只保留「出席首長」欄位剛好是「市長」的列(不含副市長、秘書長等)
-  5. 若「行程內容」或「地點」欄位包含關鍵字(預設「捷運」),就依序組成
-     兩則訊息:① 行程摘要、② 督察組通報格式(第一項自動帶入行程資料,
-     二、三項的勤教/警力數字留空供人工填寫)
-  6. 用 LINE Messaging API 的 broadcast 端點,把上述兩則訊息依序一次
-     推播給所有加官方帳號好友的人
+  5. 若「行程內容」或「地點」欄位包含關鍵字(預設「捷運」):
+     a. 組成兩則文字訊息:① 行程摘要、② 督察組通報格式(第一項自動帶入
+        行程資料,二、三項的勤教/警力數字留空供人工填寫)
+     b. 用 Playwright 對政府網站的行程表格直接截圖,存回本 Repo 的
+        screenshots/ 資料夾並 git push(需要 Repo 為 Public,且 workflow
+        要有 contents: write 權限),取得截圖的公開網址
+  6. 用 LINE Messaging API 的 broadcast 端點,依序推播:行程摘要 → 督察組
+     通報 → 行程表格截圖(若截圖失敗,仍會照常送出前兩則文字訊息)
      (broadcast 不需要事先知道對方的 User ID,只要有加官方帳號好友就會收到,
       很適合個人 / 小規模使用;若之後想改成只推給特定人,可以改用 push API
       並帶入你自己的 User ID)
@@ -28,12 +34,14 @@ import os
 import sys
 import re
 import time
+import subprocess
 import requests
 from datetime import datetime, timedelta, timezone
 from bs4 import BeautifulSoup
 
 SCHEDULE_URL = "https://www.tycg.gov.tw/NewsPage.aspx?n=9&sms=9881"
 LINE_BROADCAST_URL = "https://api.line.me/v2/bot/message/broadcast"
+SCREENSHOT_DIR = "screenshots"
 
 TW_TZ = timezone(timedelta(hours=8))
 
@@ -182,10 +190,66 @@ def send_line_broadcast(messages: list, token: str):
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
-    payload = {"messages": [{"type": "text", "text": m} for m in messages]}
+    payload = {"messages": messages}
     resp = requests.post(LINE_BROADCAST_URL, headers=headers, json=payload, timeout=20)
     if resp.status_code != 200:
         raise RuntimeError(f"LINE 推播失敗: {resp.status_code} {resp.text}")
+
+
+def capture_schedule_screenshot(output_path: str) -> bool:
+    """用 Playwright 對政府網站的行程表格直接截圖,存到 output_path。
+    成功回傳 True,失敗印出警告並回傳 False(不中斷整體流程)。
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("警告: 未安裝 playwright,略過截圖。")
+        return False
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.goto(SCHEDULE_URL, wait_until="networkidle", timeout=45000)
+            table = page.locator("table").first
+            table.screenshot(path=output_path)
+            browser.close()
+        print(f"已產生截圖: {output_path}")
+        return True
+    except Exception as e:
+        print(f"警告: 截圖失敗,略過此步驟。錯誤: {e}")
+        return False
+
+
+def commit_and_push_screenshot(local_path: str, repo_relative_path: str) -> str:
+    """把截圖 commit 並 push 回 Repo,回傳可公開存取的 raw.githubusercontent.com
+    網址;若沒有 GITHUB_REPOSITORY(例如本機測試環境)或 push 失敗,回傳空字串。
+    """
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    branch = os.environ.get("GITHUB_REF_NAME")
+    if not repo or not branch:
+        print("警告: 不在 GitHub Actions 環境中,略過 git push,無法取得公開網址。")
+        return ""
+
+    try:
+        os.makedirs(os.path.dirname(repo_relative_path), exist_ok=True)
+        os.replace(local_path, repo_relative_path)
+
+        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
+            check=True,
+        )
+        subprocess.run(["git", "add", repo_relative_path], check=True)
+        subprocess.run(
+            ["git", "commit", "-m", f"新增行程截圖: {repo_relative_path}"], check=True
+        )
+        subprocess.run(["git", "push", "origin", f"HEAD:{branch}"], check=True)
+
+        return f"https://raw.githubusercontent.com/{repo}/{branch}/{repo_relative_path}"
+    except subprocess.CalledProcessError as e:
+        print(f"警告: git commit/push 失敗,略過截圖網址。錯誤: {e}")
+        return ""
 
 
 def main():
@@ -228,8 +292,25 @@ def main():
     print("即將發送的訊息 1(行程摘要):\n" + summary_message)
     print("即將發送的訊息 2(督察組通報):\n" + report_message)
 
-    send_line_broadcast([summary_message, report_message], token)
-    print("已發送 LINE 通知(共 2 則)。")
+    messages = [
+        {"type": "text", "text": summary_message},
+        {"type": "text", "text": report_message},
+    ]
+
+    local_screenshot = "schedule_screenshot.png"
+    if capture_schedule_screenshot(local_screenshot):
+        repo_relative_path = f"{SCREENSHOT_DIR}/{target_date}.png"
+        image_url = commit_and_push_screenshot(local_screenshot, repo_relative_path)
+        if image_url:
+            print(f"截圖公開網址: {image_url}")
+            messages.append({
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            })
+
+    send_line_broadcast(messages, token)
+    print(f"已發送 LINE 通知(共 {len(messages)} 則)。")
 
 
 if __name__ == "__main__":
