@@ -115,16 +115,49 @@ def fetch_schedule_rows(max_retries: int = 4):
     return rows
 
 
+def roc_date_with_weekday(western_date: str) -> str:
+    """2026-06-01 -> 115年6月1日(星期一)"""
+    dt = datetime.strptime(western_date, "%Y-%m-%d")
+    roc_year = dt.year - 1911
+    weekday_names = ["一", "二", "三", "四", "五", "六", "日"]
+    weekday = weekday_names[dt.weekday()]
+    return f"{roc_year}年{dt.month}月{dt.day}日(星期{weekday})"
+
+
+def format_time_hm(time_str: str) -> str:
+    """14:00 -> 14時 ; 14:30 -> 14時30分"""
+    m = re.match(r"(\d{1,2}):(\d{2})", time_str.strip())
+    if not m:
+        return "＿＿時＿＿分"
+    hour, minute = m.groups()
+    hour = str(int(hour))
+    if minute == "00":
+        return f"{hour}時"
+    return f"{hour}時{int(minute)}分"
+
+
 def build_message(matched_rows, target_date, keywords):
-    lines = [f"📢 桃園市長隔日行程提醒 ({target_date})",
-             f"偵測到與「{ '、'.join(keywords) }」相關的行程:", ""]
+    date_disp = roc_date_with_weekday(target_date)
+
+    blocks = []
     for r in matched_rows:
         time_part = r["raw_date"].split(" ")[1] if " " in r["raw_date"] else ""
-        lines.append(f"🕒 {time_part}｜{r['speaker']}")
-        lines.append(f"　{r['content']}")
-        lines.append(f"　📍 {r['location']}")
-        lines.append("")
-    return "\n".join(lines).strip()
+        time_disp = format_time_hm(time_part) if time_part else "＿＿時＿＿分"
+
+        block = (
+            "督察組通報:\n"
+            f"一、市長預計於{date_disp}{time_disp}蒞臨{r['location']}，"
+            f"參加「{r['content']}」活動,預計停留時間＿＿分鐘。\n"
+            "二、預訂勤務規劃如下:\n"
+            f"(一){date_disp}　　時　　分,於＿＿＿＿現地勤教。\n"
+            f"(二)勤務時段:{date_disp}　　時至　　時。\n"
+            "(三)警力規劃:督察組便衣　　名,刑事組便衣　　名,"
+            "勤控中心制服警力　　名,第三分隊制服警力　　名(含幹部帶班)。\n"
+            "三、請相關單位落實執行。"
+        )
+        blocks.append(block)
+
+    return "\n\n".join(blocks)
 
 
 def send_line_broadcast(message: str, token: str):
