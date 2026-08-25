@@ -31,6 +31,6 @@ jobs:
       - name: 執行檢查並發送 LINE 通知
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          KEYWORDS: "捷運,機捷,綠線,桃捷,桃園捷運,桃捷公司,A8,A9,A10,A11,A12,A13,A14,A14a,A15,A16,A17,A18,A19,A20,A21,A22"
+          KEYWORDS: "捷運,機捷,綠線,桃捷,桃園捷運,桃捷公司,A7,A8,A10,A11,A12,A13,A14,A14a,A15,A16,A17,A18,A19,A20,A21,A22"
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python check_schedule.py
