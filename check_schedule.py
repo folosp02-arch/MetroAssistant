@@ -210,6 +210,8 @@ def send_line_broadcast(messages: list, token: str):
 
 def capture_schedule_screenshot(output_path: str) -> bool:
     """用 Playwright 對政府網站的行程表格直接截圖,存到 output_path。
+    先嘗試只截表格元素;若該元素因為 RWD(響應式排版)在目前 viewport
+    下被 CSS 判定為不可見而截圖失敗,改用整頁截圖當備援。
     成功回傳 True,失敗印出警告並回傳 False(不中斷整體流程)。
     """
     try:
@@ -221,10 +223,17 @@ def capture_schedule_screenshot(output_path: str) -> bool:
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch()
-            page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page = browser.new_page(viewport={"width": 1440, "height": 1600})
             page.goto(SCHEDULE_URL, wait_until="networkidle", timeout=45000)
-            table = page.locator("table").first
-            table.screenshot(path=output_path)
+
+            try:
+                table = page.locator("table").first
+                table.scroll_into_view_if_needed(timeout=10000)
+                table.screenshot(path=output_path, timeout=15000)
+            except Exception as e:
+                print(f"表格元素截圖失敗({e.__class__.__name__}),改用整頁截圖備援。")
+                page.screenshot(path=output_path, full_page=True)
+
             browser.close()
         print(f"已產生截圖: {output_path}")
         return True
