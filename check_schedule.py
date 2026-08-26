@@ -79,15 +79,20 @@ def fetch_schedule_rows(max_retries: int = 4):
     if proxy_url:
         print("已設定代理伺服器,將透過代理連線。")
 
+    session = requests.Session()
+    session.headers.update(headers)
+    if proxies:
+        session.proxies.update(proxies)
+
     last_error = None
     for attempt in range(1, max_retries + 1):
         try:
-            resp = requests.get(
-                SCHEDULE_URL,
-                timeout=(15, 45),  # (連線逾時, 讀取逾時) 秒 - 讀取拉長因應跨國連線慢
-                headers=headers,
-                proxies=proxies,
-            )
+            # 先「暖身」造訪首頁取得 session cookie,再查詢行程頁面。
+            # 網站的 WAF 會檢查是否先建立過 session,直接打子頁面容易被判定
+            # 為爬蟲而回傳 428 Precondition Required。
+            session.get("https://www.tycg.gov.tw/", timeout=(15, 45))
+
+            resp = session.get(SCHEDULE_URL, timeout=(15, 45))
             resp.raise_for_status()
             resp.encoding = "utf-8"
             break
@@ -95,6 +100,13 @@ def fetch_schedule_rows(max_retries: int = 4):
             last_error = e
             wait = attempt * 5
             print(f"第 {attempt} 次抓取失敗({e.__class__.__name__}),"
+                  f"{wait} 秒後重試...")
+            if attempt < max_retries:
+                time.sleep(wait)
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            wait = attempt * 5
+            print(f"第 {attempt} 次抓取失敗(HTTP {e.response.status_code}),"
                   f"{wait} 秒後重試...")
             if attempt < max_retries:
                 time.sleep(wait)
