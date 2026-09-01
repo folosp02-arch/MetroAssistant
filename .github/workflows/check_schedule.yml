@@ -7,8 +7,12 @@ on:
     - cron: "0 10 * * *"
   workflow_dispatch: {}   # 允許在 GitHub 網頁上手動點擊執行,方便測試
 
-permissions:
-  contents: write   # 需要寫入權限,才能把截圖 commit 回 Repo
+on:
+  schedule:
+    # cron 是 UTC 時間,台灣時間 = UTC + 8
+    # 每天 UTC 10:00 (台灣時間 18:00) 執行一次,檢查隔天的行程
+    - cron: "0 10 * * *"
+  workflow_dispatch: {}   # 允許在 GitHub 網頁上手動點擊執行,方便測試
 
 jobs:
   check:
@@ -25,12 +29,9 @@ jobs:
       - name: 安裝套件
         run: pip install -r requirements.txt
 
-      - name: 安裝 Playwright 瀏覽器(Chromium)
-        run: playwright install --with-deps chromium
-
       - name: 執行檢查並發送 LINE 通知
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          KEYWORDS: "捷運,機捷,綠線,桃捷,桃園捷運,桃捷公司,A7,A8,A10,A11,A12,A13,A14,A14a,A15,A16,A17,A18,A19,A20,A21,A22"
+          KEYWORDS: "捷運,機捷,綠線,桃捷,桃園捷運,桃捷公司,A8,A9,A10,A11,A12,A13,A14,A14a,A15,A16,A17,A18,A19,A20,A21,A22"
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python check_schedule.py
