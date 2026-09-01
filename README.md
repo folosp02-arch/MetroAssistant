@@ -5,10 +5,7 @@
 
 ## 部署步驟(GitHub Actions,全免費)
 
-1. **建立一個新的 GitHub Repository,並設成 Public(公開)**。
-   ⚠️ 因為要傳送行程截圖給 LINE,LINE 伺服器需要能連到截圖的公開網址,
-   所以這個 Repo 不能是 Private,截圖檔案(還有這個 Repo 裡的所有內容)
-   任何人都看得到,請留意這一點。
+1. **建立一個新的 GitHub Repository**(可以設成 Private)。
 
 2. 把這個資料夾裡的三個檔案上傳上去,保持原本的路徑結構:
    ```
@@ -55,26 +52,6 @@ IP 段(GitHub Actions 底層是 Azure),不分請求來源國家。要解決這�
    跟原本一樣(直接連線)。
 4. 重新手動觸發一次 workflow 測試。
 
-## 行程表格截圖
-
-有比對到符合關鍵字的行程時,會用 Playwright(無頭瀏覽器)對政府網站的
-行程表格**直接截圖**,連同前面兩則文字訊息一起用 LINE 送出(共 3 則)。
-
-運作方式:
-1. 截圖存到 Repo 的 `screenshots/<日期>.png`
-2. 程式自動 `git commit` + `git push` 回這個 Repo(所以 workflow 需要
-   `contents: write` 權限,已經內建在 workflow 檔裡)
-3. 用 `https://raw.githubusercontent.com/<你的帳號>/<repo>/<分支>/screenshots/<日期>.png`
-   這個公開網址,作為 LINE 圖片訊息的網址
-
-**這就是為什麼 Repo 必須是 Public**——`raw.githubusercontent.com` 只有
-Public Repo 才能免登入直接讀取,Private Repo 的話 LINE 伺服器連不進去,
-圖片訊息會顯示不出來。
-
-如果截圖或 git push 失敗(例如網站改版找不到表格、或忘記給
-`contents: write` 權限),程式會印出警告但**不會整個失敗**,仍然會照常
-送出前兩則文字訊息,只是少了截圖那一則。
-
 ## 想調整的地方
 
 - **關鍵字**:改 `.github/workflows/check_schedule.yml` 裡的 `KEYWORDS`
@@ -94,16 +71,11 @@ Public Repo 才能免登入直接讀取,Private Repo 的話 LINE 伺服器連不
 
 ```bash
 pip install -r requirements.txt
-playwright install chromium
 export LINE_CHANNEL_ACCESS_TOKEN="你的token"
 # 可選:強制指定要檢查的日期,方便測試(不加的話預設檢查「明天」)
 export TARGET_YMD="2026-08-07"
 python check_schedule.py
 ```
-
-⚠️ 本機執行時沒有 `GITHUB_REPOSITORY` 這個環境變數,所以截圖會拍,但不會
-push、也不會有公開網址,LINE 訊息就只會有前兩則文字、少一則圖片,這是
-正常現象,不是錯誤。
 
 ## 注意事項
 
